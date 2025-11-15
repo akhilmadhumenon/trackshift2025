@@ -7,6 +7,8 @@ from plotly.subplots import make_subplots
 import pickle
 import fastf1
 import os
+import urllib.request
+import gdown
 
 # Create cache directory
 if not os.path.exists('cache'):
@@ -23,18 +25,41 @@ st.set_page_config(
 )
 
 # Constants
-FUEL_EFFECT_PER_LAP = 0.035  # seconds per lap
+FUEL_EFFECT_PER_LAP = 0.035
+
+# Your model URL
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1cwG60nPzBxZCfYdo1fxUCpZV09M_nlkN"
 
 @st.cache_resource
-def load_model():
-    """Load trained model"""
-    with open('tyre_degradation_model.pkl', 'rb') as f:
-        artifacts = pickle.load(f)
-    return (artifacts['model'], 
-            artifacts['label_encoder'], 
-            artifacts['feature_cols'],
-            artifacts.get('fuel_effect_per_lap', 0.035))
+def download_and_load_model():
+    """Download model if not present and load it"""
+    model_path = 'tyre_degradation_model.pkl'
+    
+    if not os.path.exists(model_path):
+        try:
+            with st.spinner("📥 Downloading model (first time only, ~30 seconds)..."):
+                # Use gdown for Google Drive downloads
+                file_id = "1cwG60nPzBxZCfYdo1fxUCpZV09M_nlkN"
+                gdown.download(f"https://drive.google.com/uc?id={file_id}", model_path, quiet=False)
+                st.success("✓ Model downloaded successfully!")
+        except Exception as e:
+            st.error(f"❌ Error downloading model: {e}")
+            st.info("💡 Please check if the Google Drive link is publicly accessible")
+            st.stop()
+    
+    try:
+        with open(model_path, 'rb') as f:
+            artifacts = pickle.load(f)
+        
+        return (artifacts['model'], 
+                artifacts['label_encoder'], 
+                artifacts['feature_cols'],
+                artifacts.get('fuel_effect_per_lap', 0.035))
+    except Exception as e:
+        st.error(f"❌ Error loading model: {e}")
+        st.stop()
 
+# Rest of your functions remain the same...
 @st.cache_data
 def load_race_data(year, race_name):
     """Load race session data"""
@@ -271,7 +296,7 @@ st.sidebar.header("⚙️ Race Configuration")
 
 # Load model
 try:
-    model, le, feature_cols, fuel_effect = load_model()
+    model, le, feature_cols, fuel_effect = download_and_load_model()
     has_telemetry = any('Speed' in f or 'RPM' in f for f in feature_cols)
     has_fuel_correction = 'FuelCorrection' in feature_cols
     st.sidebar.success("✓ Model loaded")
@@ -280,8 +305,8 @@ try:
         st.sidebar.success("✓ Fuel correction enabled")
     if has_telemetry:
         st.sidebar.success("✓ Telemetry included")
-except:
-    st.sidebar.error("⚠️ Run data_collection.py & model_training.py first!")
+except Exception as e:
+    st.sidebar.error(f"⚠️ Error: {e}")
     st.stop()
 
 # Race selection
@@ -602,4 +627,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.caption("🏎️ Data: FastF1 | 🤖 Model: Random Forest | 🏆 Built by Thushara & Akhil")
+st.caption("🏎️ Data: FastF1 | 🤖 Model: Random Forest | 🏆 Built for Trackshift")
