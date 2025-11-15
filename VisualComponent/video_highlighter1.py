@@ -1,342 +1,241 @@
 import cv2
 import numpy as np
-import json
-from datetime import datetime
 from pathlib import Path
-import logging
 
-class TireDamageAnalyzer:
-    def __init__(self, video_path, output_dir="output"):
-        """
-        Initialize the tire damage analyzer
-        
-        Args:
-            video_path: Path to input video
-            output_dir: Directory for output files
-        """
+class CrackDetector:
+    def __init__(self, video_path):
         self.video_path = video_path
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
+        self.cap = cv2.VideoCapture(video_path)
         
-        # Setup logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(self.output_dir / 'analysis.log'),
-                logging.StreamHandler()
-            ]
-        )
-        self.logger = logging.getLogger(__name__)
+        # Get video properties
+        self.fps = int(self.cap.get(cv2.CAP_PROP_FPS))
+        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
-        # Analysis results
-        self.damages = []
-        self.frame_count = 0
-        
-    def enhance_frame(self, frame):
-        """Enhance frame quality for better crack detection"""
+        print(f"Video loaded: {self.width}x{self.height} @ {self.fps}fps, {self.total_frames} frames")
+    
+    def preprocess_frame(self, frame, blur_size=5):
+        """Convert to grayscale and apply preprocessing"""
         # Convert to grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+        # Apply CLAHE for contrast enhancement
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
         
-        # Denoise
-        denoised = cv2.fastNlMeansDenoising(enhanced, h=10)
+        # Gaussian blur to reduce noise
+        if blur_size % 2 == 0:
+            blur_size += 1  # Must be odd
+        blurred = cv2.GaussianBlur(enhanced, (blur_size, blur_size), 0)
         
-        # Sharpen
-        kernel = np.array([[-1,-1,-1],
-                          [-1, 9,-1],
-                          [-1,-1,-1]])
-        sharpened = cv2.filter2D(denoised, -1, kernel)
-        
-        return sharpened
+        return blurred
     
-    def detect_cracks(self, frame, frame_idx):
-        """
-        Detect cracks and damages using multiple techniques
+    def canny_edge_detection(self, gray_frame, threshold1=50, threshold2=150):
+        """Apply Canny edge detection"""
+        edges = cv2.Canny(gray_frame, threshold1, threshold2)
+        return edges
+    
+    def sobel_edge_detection(self, gray_frame):
+        """Apply Sobel edge detection"""
+        sobelx = cv2.Sobel(gray_frame, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray_frame, cv2.CV_64F, 0, 1, ksize=3)
         
-        Returns:
-            crack_mask: Binary mask of detected cracks
-            damage_info: Dictionary with damage details
-        """
-        enhanced = self.enhance_frame(frame)
-        h, w = enhanced.shape[:2]
+        # Compute magnitude
+        magnitude = np.sqrt(sobelx**2 + sobely**2)
+        magnitude = np.uint8(magnitude / magnitude.max() * 255)
         
-        # Method 1: Edge detection
-        edges = cv2.Canny(enhanced, 50, 150)
+        # Threshold
+        _, edges = cv2.threshold(magnitude, 50, 255, cv2.THRESH_BINARY)
+        return edges
+    
+    def laplacian_edge_detection(self, gray_frame):
+        """Apply Laplacian edge detection"""
+        laplacian = cv2.Laplacian(gray_frame, cv2.CV_64F)
+        laplacian = np.uint8(np.absolute(laplacian))
         
-        # Method 2: Morphological operations to find thin structures
-        kernel_line = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
-        morph = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_line)
+        # Threshold
+        _, edges = cv2.threshold(laplacian, 30, 255, cv2.THRESH_BINARY)
+        return edges
+    
+    def detect_edges(self, gray_frame, method='canny', **kwargs):
+        """Unified edge detection interface"""
+        if method == 'canny':
+            return self.canny_edge_detection(gray_frame, **kwargs)
+        elif method == 'sobel':
+            return self.sobel_edge_detection(gray_frame)
+        elif method == 'laplacian':
+            return self.laplacian_edge_detection(gray_frame)
+        else:
+            raise ValueError(f"Unknown method: {method}")
+    
+    def post_process_edges(self, edges, min_area=100):
+        """Post-process edges to identify crack-like structures"""
+        # Morphological closing to connect broken edges
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
         
-        # Method 3: Adaptive thresholding for local variations
-        adaptive = cv2.adaptiveThreshold(
-            enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV, 11, 2
-        )
+        # Find contours
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        # Combine methods
-        combined = cv2.bitwise_or(morph, adaptive)
-        
-        # Remove noise - only keep significant contours
-        kernel_clean = np.ones((2,2), np.uint8)
-        cleaned = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel_clean)
-        
-        # Find contours (potential cracks)
-        contours, _ = cv2.findContours(
-            cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-        
-        # Filter contours based on aspect ratio and size
-        crack_mask = np.zeros_like(cleaned)
-        damage_info = {
-            'frame': frame_idx,
-            'timestamp': frame_idx / 30.0,  # assuming 30fps
-            'damages': []
-        }
-        
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area < 20:  # Ignore very small contours
+        # Filter contours by area and aspect ratio
+        crack_contours = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < min_area:
                 continue
-                
+            
             # Get bounding rectangle
-            x, y, w_box, h_box = cv2.boundingRect(cnt)
-            aspect_ratio = max(w_box, h_box) / (min(w_box, h_box) + 1e-6)
+            x, y, w, h = cv2.boundingRect(contour)
+            aspect_ratio = max(w, h) / (min(w, h) + 1e-5)
             
-            # Cracks are typically elongated
-            if aspect_ratio > 2 and area > 30:
-                cv2.drawContours(crack_mask, [cnt], -1, 255, -1)
-                
-                # Estimate severity based on area and length
-                perimeter = cv2.arcLength(cnt, True)
-                severity = "Low"
-                if area > 200:
-                    severity = "High"
-                elif area > 100:
-                    severity = "Medium"
-                
-                damage_info['damages'].append({
-                    'type': 'crack',
-                    'location': (int(x + w_box/2), int(y + h_box/2)),
-                    'area': float(area),
-                    'length': float(perimeter),
-                    'severity': severity,
-                    'bbox': [int(x), int(y), int(w_box), int(h_box)]
-                })
+            # Cracks are typically elongated (high aspect ratio)
+            if aspect_ratio > 2:
+                crack_contours.append(contour)
         
-        return crack_mask, damage_info
+        return crack_contours
     
-    def estimate_depth(self, frame, crack_mask):
-        """
-        Estimate relative depth of cracks using shadows and intensity
-        Note: Without stereo vision, this is approximate
-        """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    def draw_detections(self, frame, contours):
+        """Draw detected cracks on the frame"""
+        result = frame.copy()
         
-        # Create depth map based on intensity (darker = deeper)
-        depth_map = np.zeros_like(gray, dtype=np.float32)
-        
-        # Where cracks exist, estimate depth from local intensity variation
-        crack_regions = crack_mask > 0
-        if np.any(crack_regions):
-            # Apply Gaussian to get local context
-            local_mean = cv2.GaussianBlur(gray.astype(np.float32), (15, 15), 0)
-            
-            # Depth is inversely proportional to intensity
-            depth_estimate = 255 - gray
-            depth_map[crack_regions] = depth_estimate[crack_regions]
-            
-            # Normalize
-            if depth_map.max() > 0:
-                depth_map = (depth_map / depth_map.max() * 255).astype(np.uint8)
-        
-        return depth_map
-    
-    def create_visualization(self, frame, crack_mask, depth_map, damage_info):
-        """Create annotated frame with detected damages highlighted"""
-        vis_frame = frame.copy()
-        
-        # Create colored overlay for cracks (red)
-        overlay = np.zeros_like(frame)
-        overlay[crack_mask > 0] = [0, 0, 255]  # Red for cracks
-        
-        # Blend with original
-        vis_frame = cv2.addWeighted(vis_frame, 0.7, overlay, 0.3, 0)
-        
-        # Add depth visualization (blue gradient)
-        depth_colored = cv2.applyColorMap(depth_map, cv2.COLORMAP_JET)
-        depth_overlay = np.zeros_like(frame)
-        depth_overlay[crack_mask > 0] = depth_colored[crack_mask > 0]
-        vis_frame = cv2.addWeighted(vis_frame, 0.8, depth_overlay, 0.2, 0)
+        # Draw contours
+        cv2.drawContours(result, contours, -1, (0, 255, 0), 2)
         
         # Draw bounding boxes and labels
-        for damage in damage_info['damages']:
-            x, y, w, h = damage['bbox']
-            color = (0, 255, 0) if damage['severity'] == 'Low' else \
-                    (0, 255, 255) if damage['severity'] == 'Medium' else (0, 0, 255)
-            
-            cv2.rectangle(vis_frame, (x, y), (x+w, y+h), color, 2)
-            
-            # Add label
-            label = f"{damage['severity']} - {damage['area']:.0f}px"
-            cv2.putText(vis_frame, label, (x, y-5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        for i, contour in enumerate(contours):
+            x, y, w, h = cv2.boundingRect(contour)
+            cv2.rectangle(result, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            cv2.putText(result, f"Crack {i+1}", (x, y - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         
-        # Add summary text
-        summary = f"Frame: {damage_info['frame']} | Damages: {len(damage_info['damages'])}"
-        cv2.putText(vis_frame, summary, (10, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
-        return vis_frame
+        return result
     
-    def process_video(self):
-        """Main processing pipeline"""
-        self.logger.info(f"Starting analysis of {self.video_path}")
+    def process_video(self, output_path='output_crack_detection.mp4', 
+                     method='canny', blur_size=5, min_area=100, 
+                     display=True, save_frames=False):
+        """Process entire video and detect cracks"""
         
-        # Open video
-        cap = cv2.VideoCapture(str(self.video_path))
-        if not cap.isOpened():
-            self.logger.error("Failed to open video")
+        # Setup video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, self.fps, (self.width * 3, self.height))
+        
+        frame_num = 0
+        total_cracks_detected = 0
+        
+        if save_frames:
+            Path('frames').mkdir(exist_ok=True)
+        
+        while True:
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+            
+            frame_num += 1
+            
+            # Preprocess
+            preprocessed = self.preprocess_frame(frame, blur_size)
+            
+            # Detect edges
+            edges = self.detect_edges(preprocessed, method=method)
+            
+            # Post-process and find cracks
+            crack_contours = self.post_process_edges(edges, min_area)
+            
+            # Draw results
+            result = self.draw_detections(frame, crack_contours)
+            
+            # Create visualization
+            edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+            combined = np.hstack([frame, edges_colored, result])
+            
+            # Add info overlay
+            info_text = f"Frame: {frame_num}/{self.total_frames} | Cracks: {len(crack_contours)} | Method: {method.upper()}"
+            cv2.putText(combined, info_text, (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # Write to output
+            out.write(combined)
+            
+            # Display
+            if display:
+                cv2.imshow('Crack Detection', cv2.resize(combined, (1920, 640)))
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            
+            # Save frames periodically
+            if save_frames and frame_num % 30 == 0:
+                cv2.imwrite(f'frames/frame_{frame_num:04d}.jpg', combined)
+            
+            total_cracks_detected += len(crack_contours)
+            
+            # Progress update
+            if frame_num % 30 == 0:
+                print(f"Processed {frame_num}/{self.total_frames} frames, "
+                      f"Average cracks: {total_cracks_detected/frame_num:.2f}")
+        
+        # Cleanup
+        self.cap.release()
+        out.release()
+        cv2.destroyAllWindows()
+        
+        print(f"\nProcessing complete!")
+        print(f"Total frames: {frame_num}")
+        print(f"Total cracks detected: {total_cracks_detected}")
+        print(f"Average cracks per frame: {total_cracks_detected/frame_num:.2f}")
+        print(f"Output saved to: {output_path}")
+    
+    def process_single_frame(self, frame_index=0, method='canny'):
+        """Process and display a single frame"""
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ret, frame = self.cap.read()
+        
+        if not ret:
+            print("Failed to read frame")
             return
         
-        # Get video properties
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        # Process
+        preprocessed = self.preprocess_frame(frame)
+        edges = self.detect_edges(preprocessed, method=method)
+        crack_contours = self.post_process_edges(edges)
+        result = self.draw_detections(frame, crack_contours)
         
-        self.logger.info(f"Video: {width}x{height} @ {fps}fps, {total_frames} frames")
+        # Display
+        edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+        combined = np.hstack([frame, edges_colored, result])
         
-        # Setup output video
-        output_path = self.output_dir / 'annotated_video.mp4'
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+        cv2.imshow('Single Frame Analysis', combined)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
         
-        frame_idx = 0
-        total_damages = 0
-        
-        try:
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                # Detect damages
-                crack_mask, damage_info = self.detect_cracks(frame, frame_idx)
-                
-                # Estimate depth
-                depth_map = self.estimate_depth(frame, crack_mask)
-                
-                # Create visualization
-                vis_frame = self.create_visualization(
-                    frame, crack_mask, depth_map, damage_info
-                )
-                
-                # Write to output
-                out.write(vis_frame)
-                
-                # Store damage info if any detected
-                if damage_info['damages']:
-                    self.damages.append(damage_info)
-                    total_damages += len(damage_info['damages'])
-                    self.logger.info(
-                        f"Frame {frame_idx}: {len(damage_info['damages'])} damages detected"
-                    )
-                
-                frame_idx += 1
-                
-                # Progress update
-                if frame_idx % 30 == 0:
-                    progress = (frame_idx / total_frames) * 100
-                    self.logger.info(f"Progress: {progress:.1f}%")
-                    
-        finally:
-            cap.release()
-            out.release()
-            
-        self.logger.info(f"Processing complete. Total damages: {total_damages}")
-        self.logger.info(f"Annotated video saved to: {output_path}")
-        
-        # Generate reports
-        self.generate_reports()
-    
-    def generate_reports(self):
-        """Generate JSON and text reports"""
-        # JSON report
-        json_path = self.output_dir / 'damage_report.json'
-        report = {
-            'analysis_date': datetime.now().isoformat(),
-            'video_path': str(self.video_path),
-            'total_frames_analyzed': self.frame_count,
-            'frames_with_damage': len(self.damages),
-            'total_damages': sum(len(d['damages']) for d in self.damages),
-            'damage_details': self.damages
-        }
-        
-        with open(json_path, 'w') as f:
-            json.dump(report, f, indent=2)
-        
-        self.logger.info(f"JSON report saved to: {json_path}")
-        
-        # Text summary report
-        txt_path = self.output_dir / 'damage_summary.txt'
-        with open(txt_path, 'w') as f:
-            f.write("F1 TIRE DAMAGE ANALYSIS REPORT\n")
-            f.write("=" * 50 + "\n\n")
-            f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Video: {self.video_path}\n")
-            f.write(f"Total Damages Detected: {report['total_damages']}\n\n")
-            
-            # Severity breakdown
-            severity_counts = {'Low': 0, 'Medium': 0, 'High': 0}
-            for damage_frame in self.damages:
-                for damage in damage_frame['damages']:
-                    severity_counts[damage['severity']] += 1
-            
-            f.write("SEVERITY BREAKDOWN:\n")
-            f.write(f"  High Severity:   {severity_counts['High']}\n")
-            f.write(f"  Medium Severity: {severity_counts['Medium']}\n")
-            f.write(f"  Low Severity:    {severity_counts['Low']}\n\n")
-            
-            f.write("DETAILED DAMAGE LOG:\n")
-            f.write("-" * 50 + "\n")
-            for damage_frame in self.damages:
-                f.write(f"\nFrame {damage_frame['frame']} "
-                       f"(Time: {damage_frame['timestamp']:.2f}s)\n")
-                for i, damage in enumerate(damage_frame['damages'], 1):
-                    f.write(f"  Damage {i}:\n")
-                    f.write(f"    Type: {damage['type']}\n")
-                    f.write(f"    Severity: {damage['severity']}\n")
-                    f.write(f"    Area: {damage['area']:.1f} pixels\n")
-                    f.write(f"    Length: {damage['length']:.1f} pixels\n")
-                    f.write(f"    Location: {damage['location']}\n")
-        
-        self.logger.info(f"Text report saved to: {txt_path}")
+        print(f"Cracks detected in frame {frame_index}: {len(crack_contours)}")
 
 
-# Usage example
+# Usage Example
 if __name__ == "__main__":
-    # Initialize analyzer
-    analyzer = TireDamageAnalyzer(
-        video_path="Sample_Worn.mp4",  # Replace with your video path
-        output_dir="Mapped_Tyre_Damage_Video"
+    # Initialize detector
+    detector = CrackDetector('Sample_Worn.mp4')
+    
+    # Method 1: Process entire video with Canny edge detection
+    detector.process_video(
+        output_path='output_canny.mp4',
+        method='canny',
+        blur_size=5,
+        min_area=100,
+        display=True,
+        save_frames=False
     )
     
-    # Process the video
-    analyzer.process_video()
+    # Method 2: Try different edge detection methods
+    detector.process_video(output_path='output_sobel.mp4', method='sobel',blur_size=5,
+        min_area=100,
+        display=True,
+        save_frames=False)
+    detector.process_video(output_path='output_laplacian.mp4', method='laplacian',blur_size=5,
+        min_area=100,
+        display=True,
+        save_frames=False)
+
     
-    print("\n" + "="*50)
-    print("Analysis Complete!")
-    print("="*50)
-    print("\nOutput files:")
-    print("1. annotated_video.mp4 - Video with highlighted damages")
-    print("2. damage_report.json - Detailed JSON report")
-    print("3. damage_summary.txt - Human-readable summary")
-    print("4. analysis.log - Processing logs")
-
-
-
-
+    # Method 3: Analyze single frame
+    # detector.process_single_frame(frame_index=100, method='canny')
