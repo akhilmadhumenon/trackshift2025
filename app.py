@@ -28,7 +28,7 @@ st.set_page_config(
 FUEL_EFFECT_PER_LAP = 0.035
 
 # Your model URL
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1cwG60nPzBxZCfYdo1fxUCpZV09M_nlkN"
+MODEL_URL = "https://drive.google.com/uc?export=download&id=11K7NQgec0tvEwZYX6ERf2A9tSHhV9Ot8"
 
 @st.cache_resource
 def download_and_load_model():
@@ -41,7 +41,7 @@ def download_and_load_model():
                 # Use gdown for Google Drive downloads
                 file_id = "1cwG60nPzBxZCfYdo1fxUCpZV09M_nlkN"
                 gdown.download(f"https://drive.google.com/uc?id={file_id}", model_path, quiet=False)
-                st.success("✓ Model downloaded successfully!")
+                # st.success("✓ Model downloaded successfully!")
         except Exception as e:
             st.error(f"❌ Error downloading model: {e}")
             st.info("💡 Please check if the Google Drive link is publicly accessible")
@@ -67,12 +67,93 @@ def load_race_data(year, race_name):
     session.load()
     return session, session.laps
 
+def generate_synthetic_f1_sensors(telemetry, compound):
+    """
+    Generates realistic synthetic F1 sensor data based on telemetry stats.
+    """
+    speed_mean = telemetry['Speed'].mean()
+    brake_ratio = (telemetry['Brake'] > 0).sum() / len(telemetry)
+    
+    # Tyre temperature ranges by compound
+    compound_temp_base = {
+        'SOFT': 102,
+        'MEDIUM': 97,
+        'HARD': 92,
+        'INTERMEDIATE': 80,
+        'WET': 65
+    }
+    base_temp = compound_temp_base.get(compound.upper(), 95)
+
+    # Generate temps with random fluctuation + correlation on speed/braking
+    tyre_temps = {
+        f"TyreTemp_{pos}": np.random.normal(base_temp + speed_mean*0.05 + brake_ratio*30, 2)
+        for pos in ['FL','FR','RL','RR']
+    }
+
+    tyre_pressure_base = 23.0  # psi baseline
+    tyre_pressures = {
+        f"TyrePressure_{pos}": np.random.normal(tyre_pressure_base + (tyre_temps[f'TyreTemp_{pos}'] - 90)*0.02, 0.1)
+        for pos in ['FL','FR','RL','RR']
+    }
+
+    # Brake temperatures (very strongly correlated with braking)
+    brake_temps = {
+        f"BrakeTemp_{pos}": np.random.normal(350 + brake_ratio*900, 25)
+        for pos in ['FL','FR','RL','RR']
+    }
+
+    # Power unit thermals
+    engine_temp = np.random.normal(128 + speed_mean*0.02, 1.5)
+    oil_temp = engine_temp + np.random.normal(18, 2)
+    coolant_temp = engine_temp - np.random.normal(10, 1)
+
+    # ERS
+    ers_deploy = np.random.uniform(0.4, 0.95)
+    battery_soc = np.random.normal(65 - ers_deploy*30 + brake_ratio*20, 3)
+    
+    # MGU temperatures
+    mguh_temp = np.random.normal(165 + speed_mean*0.03, 3)
+    mguk_temp = np.random.normal(155 + brake_ratio*80, 3)
+
+    # Thermal camera synthetic values
+    thermal_data = {
+        'Sidepod_Temp_Left': np.random.normal(95 + speed_mean*0.02, 2),
+        'Sidepod_Temp_Right': np.random.normal(96 + speed_mean*0.02, 2),
+        'Floor_Temp': np.random.normal(85 + speed_mean*0.015, 2),
+        'Brake_Duct_Temp': np.random.normal(150 + brake_ratio*300, 3),
+    }
+
+    # G Loads
+    g_loads = {
+        'Lateral_G_Load': np.random.normal(speed_mean * 0.012, 0.1),
+        'Longitudinal_G_Load': np.random.normal(brake_ratio * 3.5, 0.1),
+    }
+
+    # Tyre wear estimation (very rough model)
+    tyre_wear = np.clip(np.random.normal(brake_ratio*20 + speed_mean*0.1, 1), 0, 100)
+
+    return {
+        **tyre_temps,
+        **tyre_pressures,
+        **brake_temps,
+        'ICE_Temperature': engine_temp,
+        'Oil_Temp': oil_temp,
+        'Coolant_Temp': coolant_temp,
+        'MGUH_Temp': mguh_temp,
+        'MGUK_Temp': mguk_temp,
+        'ERS_Deployment_Ratio': ers_deploy,
+        'Battery_SOC': battery_soc,
+        **thermal_data,
+        **g_loads,
+        'Tyre_Wear_Index': tyre_wear
+    }
+
 def get_lap_telemetry_stats(lap):
-    """Extract car telemetry statistics for prediction"""
+    """Extract telemetry + synthetic F1 sensor statistics for prediction"""
     try:
         telemetry = lap.get_car_data().add_distance()
-        
-        stats = {
+
+        base_stats = {
             'Speed_Mean': telemetry['Speed'].mean(),
             'Speed_Max': telemetry['Speed'].max(),
             'Speed_Std': telemetry['Speed'].std(),
@@ -86,8 +167,16 @@ def get_lap_telemetry_stats(lap):
             'Brake_Percent': (telemetry['Brake'] > 0).sum() / len(telemetry) * 100,
             'Brake_Count': (telemetry['Brake'].diff() > 0).sum(),
         }
-        return stats
-    except:
+
+        # NEW — synthetic F1 sensor data for prediction
+        synthetic_stats = generate_synthetic_f1_sensors(
+            telemetry,
+            lap['Compound']
+        )
+
+        return {**base_stats, **synthetic_stats}
+
+    except Exception:
         return None
 
 def calculate_enhanced_degradation(driver_laps, fuel_effect=FUEL_EFFECT_PER_LAP):
@@ -115,36 +204,23 @@ def calculate_enhanced_degradation(driver_laps, fuel_effect=FUEL_EFFECT_PER_LAP)
     return driver_laps
 
 def predict_degradation(model, lap_data, compound, stint, le, feature_cols):
-    """Predict degradation for given lap data"""
+    """Predict degradation using full feature set including synthetic sensors"""
     compound_encoded = le.transform([compound])[0]
-    
-    # Create feature dict
+
     features = {
         'TyreLife': lap_data.get('TyreLife', 1),
         'CompoundEncoded': compound_encoded,
-        'Stint': stint
+        'Stint': stint,
     }
-    
-    # Add fuel correction if in model
-    if 'FuelCorrection' in feature_cols:
-        features['FuelCorrection'] = lap_data.get('FuelCorrection', 0)
-    
-    # Add sector times if in model
-    if 'Sector1Time' in feature_cols:
-        features['Sector1Time'] = lap_data.get('Sector1Time', 30.0)
-        features['Sector2Time'] = lap_data.get('Sector2Time', 40.0)
-        features['Sector3Time'] = lap_data.get('Sector3Time', 25.0)
-    
-    # Add telemetry features if in model
-    telemetry_features = [f for f in feature_cols if any(x in f for x in ['Speed', 'RPM', 'Throttle', 'Gear', 'Brake'])]
-    for tf in telemetry_features:
-        features[tf] = lap_data.get(tf, 0)
-    
-    # Create dataframe in correct order
+
+    # Add ALL features from model in correct order
+    for col in feature_cols:
+        if col not in features:
+            features[col] = lap_data.get(col, 0)
+
     X = pd.DataFrame([features])[feature_cols]
-    
-    prediction = model.predict(X)[0]
-    return max(0, prediction)
+    return max(0, model.predict(X)[0])
+
 
 def plot_degradation_curve(degradation_data, driver_name, compound, show_simple=False):
     """Create interactive degradation curve with fuel correction visualization"""
@@ -225,6 +301,83 @@ def plot_fuel_impact(stint_data):
     
     return fig
 
+def plot_tyre_temps(stint):
+    cols = ['TyreTemp_FL','TyreTemp_FR','TyreTemp_RL','TyreTemp_RR']
+    present = [c for c in cols if c in stint.columns]
+    if not present:
+        return None
+    
+    fig = go.Figure()
+    for c in present:
+        fig.add_trace(go.Scatter(
+            x=stint['TyreLife'], y=stint[c], mode='lines', name=c
+        ))
+    fig.update_layout(
+        title="Tyre Temperatures (°C)",
+        template="plotly_dark",
+        height=400
+    )
+    return fig
+
+def plot_brake_temps(stint):
+    cols = ['BrakeTemp_FL','BrakeTemp_FR','BrakeTemp_RL','BrakeTemp_RR']
+    present = [c for c in cols if c in stint.columns]
+    if not present:
+        return None
+    
+    fig = go.Figure()
+    for c in present:
+        fig.add_trace(go.Scatter(
+            x=stint['TyreLife'], y=stint[c], mode='lines', name=c
+        ))
+    fig.update_layout(
+        title="Brake Temperatures (°C)",
+        template="plotly_dark",
+        height=400
+    )
+    return fig
+
+def plot_ers_usage(stint):
+    cols = ['ERS_Deployment_Ratio','Battery_SOC']
+    present = [c for c in cols if c in stint.columns]
+    if not present:
+        return None
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=stint['TyreLife'], y=stint['ERS_Deployment_Ratio'],
+        mode='lines', name='ERS Deployment'
+    ))
+    fig.add_trace(go.Scatter(
+        x=stint['TyreLife'], y=stint['Battery_SOC'],
+        mode='lines', name='Battery SOC (%)'
+    ))
+    fig.update_layout(
+        title="ERS & Battery State",
+        template="plotly_dark",
+        height=350
+    )
+    return fig
+
+def plot_engine_temps(stint):
+    cols = ['ICE_Temperature','Oil_Temp','Coolant_Temp','MGUH_Temp','MGUK_Temp']
+    present = [c for c in cols if c in stint.columns]
+    if not present:
+        return None
+
+    fig = go.Figure()
+    for c in present:
+        fig.add_trace(go.Scatter(
+            x=stint['TyreLife'], y=stint[c], mode='lines', name=c
+        ))
+    fig.update_layout(
+        title="Power Unit Temperatures (°C)",
+        template="plotly_dark",
+        height=350
+    )
+    return fig
+
+
 def plot_telemetry_comparison(stint_data):
     """Plot telemetry metrics over stint"""
     fig = make_subplots(
@@ -299,12 +452,12 @@ try:
     model, le, feature_cols, fuel_effect = download_and_load_model()
     has_telemetry = any('Speed' in f or 'RPM' in f for f in feature_cols)
     has_fuel_correction = 'FuelCorrection' in feature_cols
-    st.sidebar.success("✓ Model loaded")
+    # st.sidebar.success("✓ Model loaded")
     st.sidebar.info(f"📊 Features: {len(feature_cols)}")
-    if has_fuel_correction:
-        st.sidebar.success("✓ Fuel correction enabled")
-    if has_telemetry:
-        st.sidebar.success("✓ Telemetry included")
+    # if has_fuel_correction:
+    #     # st.sidebar.success("✓ Fuel correction enabled")
+    # if has_telemetry:
+    #     # st.sidebar.success("✓ Telemetry included")
 except Exception as e:
     st.sidebar.error(f"⚠️ Error: {e}")
     st.stop()
@@ -495,34 +648,51 @@ if 'laps_data' in st.session_state:
             st.info("Enable 'Show fuel impact' in the sidebar to see fuel correction analysis")
     
     with tab3:
-        if has_telemetry and 'Speed_Mean' in stint_data.columns:
-            st.plotly_chart(plot_telemetry_comparison(stint_data), use_container_width=True)
+        st.subheader("🚗 Driving Telemetry")
+        st.plotly_chart(plot_telemetry_comparison(stint_data), use_container_width=True)
+
+        st.subheader("🌡️ Tyre Temperatures")
+        fig = plot_tyre_temps(stint_data)
+        if fig: st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("🔥 Brake Temperatures")
+        fig = plot_brake_temps(stint_data)
+        if fig: st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("⚡ ERS & Battery")
+        fig = plot_ers_usage(stint_data)
+        if fig: st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("🏎️ Power Unit Temperatures")
+        fig = plot_engine_temps(stint_data)
+        if fig: st.plotly_chart(fig, use_container_width=True)
+
             
             # Telemetry insights
-            st.markdown("**🔧 Driving Style Impact on Degradation**")
-            col1, col2, col3, col4 = st.columns(4)
+        st.markdown("**🔧 Driving Style Impact on Degradation**")
+        col1, col2, col3, col4 = st.columns(4)
             
-            with col1:
-                if 'Throttle_Mean' in stint_data.columns:
-                    avg_throttle = stint_data['Throttle_Mean'].mean()
-                    st.metric("Avg Throttle", f"{avg_throttle:.1f}%")
+        with col1:
+            if 'Throttle_Mean' in stint_data.columns:
+                avg_throttle = stint_data['Throttle_Mean'].mean()
+                st.metric("Avg Throttle", f"{avg_throttle:.1f}%")
+        
+        with col2:
+            if 'Brake_Percent' in stint_data.columns:
+                avg_brake = stint_data['Brake_Percent'].mean()
+                st.metric("Braking Time", f"{avg_brake:.1f}%")
             
-            with col2:
-                if 'Brake_Percent' in stint_data.columns:
-                    avg_brake = stint_data['Brake_Percent'].mean()
-                    st.metric("Braking Time", f"{avg_brake:.1f}%")
-            
-            with col3:
-                if 'Speed_Mean' in stint_data.columns:
-                    avg_speed = stint_data['Speed_Mean'].mean()
-                    st.metric("Avg Speed", f"{avg_speed:.0f} km/h")
+        with col3:
+            if 'Speed_Mean' in stint_data.columns:
+                avg_speed = stint_data['Speed_Mean'].mean()
+                st.metric("Avg Speed", f"{avg_speed:.0f} km/h")
             
             with col4:
                 if 'RPM_Mean' in stint_data.columns:
                     avg_rpm = stint_data['RPM_Mean'].mean()
                     st.metric("Avg RPM", f"{avg_rpm:.0f}")
-        else:
-            st.info("Telemetry visualization available when model includes car data features")
+                else:
+                    st.info("Telemetry visualization available when model includes car data features")
     
     with tab4:
         display_cols = ['LapNumber', 'TyreLife', 'LapTime', 'EnhancedDegradation', 
@@ -561,7 +731,7 @@ if 'laps_data' in st.session_state:
         )
 
 else:
-    st.info("👈 Configure race settings and click 'Load Race Data'")
+    # st.info("👈 Configure race settings and click 'Load Race Data'")
     
     # Demo information
     col1, col2 = st.columns(2)
@@ -611,7 +781,7 @@ else:
         ### Enhanced Degradation Formula
 ```
         Fuel Correction = Lap Number × 0.035 seconds
-        Fuel-Corrected Time = Raw Lap Time + Fuel Correction
+        Fuel-Corrected Time = Raw Lap Time - Fuel Correction
         Baseline = Minimum Fuel-Corrected Time
         Degradation = Fuel-Corrected Time - Baseline
 ```
