@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+    environment:
+      - VITE_API_URL=http://localhost:5000
+    depends_on:
+      - backend
+    networks:
+      - f1-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/uploads:/app/uploads
+    environment:
+      - PORT=5000
+      - FRONTEND_URL=http://localhost:3000
+      - PYTHON_SERVICE_URL=http://python-service:8000
+      - UPLOAD_DIR=/app/uploads
+    depends_on:
+      - python-service
+    networks:
+      - f1-network
+
+  python-service:
+    build:
+      context: ./python-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./python-service:/app
+      - ./python-service/uploads:/app/uploads
+      - ./python-service/models:/app/models
+    environment:
+      - PORT=8000
+      - UPLOAD_DIR=/app/uploads
+      - MODEL_DIR=/app/models
+    networks:
+      - f1-network
+
+networks:
+  f1-network:
+    driver: bridge
+
+volumes:
+  uploads:
+  models:
