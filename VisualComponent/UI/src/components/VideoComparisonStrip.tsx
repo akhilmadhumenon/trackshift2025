@@ -7,15 +7,13 @@ interface VideoComparisonStripProps {}
 
 const VideoComparisonStrip: React.FC<VideoComparisonStripProps> = () => {
   // Get state and actions from Zustand store
-  const referenceVideo = useAppStore((state) => state.referenceVideo);
-  const damagedVideo = useAppStore((state) => state.damagedVideo);
-  const reconstructionResult = useAppStore((state) => state.reconstructionResult);
   const updateVideoTimestamp = useAppStore((state) => state.updateVideoTimestamp);
   const setVideoDuration = useAppStore((state) => state.setVideoDuration);
   
-  const referenceVideoUrl = referenceVideo?.url || null;
-  const damagedVideoUrl = damagedVideo?.url || null;
-  const differenceVideoUrl = reconstructionResult?.differenceVideoUrl || null;
+  // Hardcoded video URLs
+  const referenceVideoUrl = '/Actual.mp4';
+  const damagedVideoUrl = '/Canny.mov';
+  const differenceVideoUrl = '/CNN.mov';
   const referenceVideoRef = useRef<HTMLVideoElement>(null);
   const damagedVideoRef = useRef<HTMLVideoElement>(null);
   const differenceVideoRef = useRef<HTMLVideoElement>(null);
@@ -295,21 +293,21 @@ const VideoComparisonStrip: React.FC<VideoComparisonStripProps> = () => {
   return (
     <div className="w-full h-full flex flex-col bg-ferrari-black" role="region" aria-label="Video comparison viewer">
       {/* Three-column layout for video players - Responsive */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-0 flex-1 overflow-hidden" role="group" aria-label="Video players">
-        {/* Reference Video Column */}
-        <div className="flex flex-col border-r border-ferrari-graphite">
-          <div className="bg-ferrari-graphite border-b border-ferrari-black px-2 sm:px-4 py-1.5 sm:py-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-0 flex-1 min-h-0" role="group" aria-label="Video players">
+        {/* Actual Video Column */}
+        <div className="flex flex-col border-r border-ferrari-graphite min-h-0">
+          <div className="bg-ferrari-graphite border-b border-ferrari-black px-2 sm:px-4 py-1.5 sm:py-2 flex-shrink-0">
             <h3 className="text-ferrari-white font-formula text-xs sm:text-sm font-semibold tracking-wide truncate" id="reference-video-label">
-              <span className="hidden sm:inline">Reference Video</span>
-              <span className="sm:hidden">Reference</span>
+              <span className="hidden sm:inline">Actual Video</span>
+              <span className="sm:hidden">Actual</span>
             </h3>
           </div>
-          <div className="flex-1 bg-black flex items-center justify-center relative">
+          <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 overflow-hidden">
             {referenceVideoUrl ? (
               <>
                 <video
                   ref={referenceVideoRef}
-                  className="w-full h-full object-contain"
+                  className="max-w-full max-h-full w-auto h-auto object-contain"
                   src={referenceVideoUrl}
                   playsInline
                   preload="auto"
@@ -325,32 +323,33 @@ const VideoComparisonStrip: React.FC<VideoComparisonStripProps> = () => {
               </>
             ) : (
               <div className="text-ferrari-white/50 text-sm">
-                No reference video
+                No actual video
               </div>
             )}
           </div>
         </div>
 
-        {/* Damaged Video Column */}
-        <div className="flex flex-col border-r border-ferrari-graphite">
-          <div className="bg-ferrari-graphite border-b border-ferrari-black px-2 sm:px-4 py-1.5 sm:py-2">
+        {/* Canny Video Column */}
+        <div className="flex flex-col border-r border-ferrari-graphite min-h-0">
+          <div className="bg-ferrari-graphite border-b border-ferrari-black px-2 sm:px-4 py-1.5 sm:py-2 flex-shrink-0">
             <h3 className="text-ferrari-white font-formula text-xs sm:text-sm font-semibold tracking-wide truncate" id="damaged-video-label">
-              <span className="hidden sm:inline">Damaged Video</span>
-              <span className="sm:hidden">Damaged</span>
+              <span className="hidden sm:inline">Canny Video</span>
+              <span className="sm:hidden">Canny</span>
             </h3>
           </div>
-          <div className="flex-1 bg-black flex items-center justify-center relative">
+          <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 overflow-hidden">
             {damagedVideoUrl ? (
               <>
                 <video
                   ref={damagedVideoRef}
-                  className="w-full h-full object-contain"
+                  className="max-w-full max-h-full w-auto h-auto object-contain"
                   src={damagedVideoUrl}
                   playsInline
                   preload="auto"
                   crossOrigin="anonymous"
                   aria-labelledby="damaged-video-label"
                   aria-describedby="video-controls"
+                  style={{ filter: 'brightness(1.2) contrast(1.2)' }}
                 />
                 {isBuffering.damaged && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -360,26 +359,26 @@ const VideoComparisonStrip: React.FC<VideoComparisonStripProps> = () => {
               </>
             ) : (
               <div className="text-ferrari-white/50 text-sm">
-                No damaged video
+                No canny video
               </div>
             )}
           </div>
         </div>
 
-        {/* Difference Video Column */}
-        <div className="flex flex-col">
-          <div className="bg-ferrari-graphite border-b border-ferrari-black px-2 sm:px-4 py-1.5 sm:py-2">
+        {/* CNN Video Column */}
+        <div className="flex flex-col min-h-0">
+          <div className="bg-ferrari-graphite border-b border-ferrari-black px-2 sm:px-4 py-1.5 sm:py-2 flex-shrink-0">
             <h3 className="text-ferrari-white font-formula text-xs sm:text-sm font-semibold tracking-wide truncate" id="difference-video-label">
-              <span className="hidden sm:inline">Difference Video</span>
-              <span className="sm:hidden">Difference</span>
+              <span className="hidden sm:inline">CNN Video</span>
+              <span className="sm:hidden">CNN</span>
             </h3>
           </div>
-          <div className="flex-1 bg-black flex items-center justify-center relative">
+          <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 overflow-hidden">
             {differenceVideoUrl ? (
               <>
                 <video
                   ref={differenceVideoRef}
-                  className="w-full h-full object-contain"
+                  className="max-w-full max-h-full w-auto h-auto object-contain"
                   src={differenceVideoUrl}
                   playsInline
                   preload="auto"
@@ -395,7 +394,7 @@ const VideoComparisonStrip: React.FC<VideoComparisonStripProps> = () => {
               </>
             ) : (
               <div className="text-ferrari-white/50 text-sm">
-                No difference video
+                No CNN video
               </div>
             )}
           </div>
@@ -403,7 +402,7 @@ const VideoComparisonStrip: React.FC<VideoComparisonStripProps> = () => {
       </div>
 
       {/* Unified Playback Controls - Responsive */}
-      <div className="bg-ferrari-graphite border-t border-ferrari-black px-2 sm:px-4 py-2 sm:py-3" id="video-controls">
+      <div className="bg-ferrari-graphite border-t border-ferrari-black px-2 sm:px-4 py-2 sm:py-3 flex-shrink-0" id="video-controls">
         <div className="flex items-center gap-2 sm:gap-4" role="toolbar" aria-label="Video playback controls">
           {/* Play/Pause and Frame Step Controls - Touch-friendly */}
           <div className="flex items-center gap-1 sm:gap-2" role="group" aria-label="Playback buttons">

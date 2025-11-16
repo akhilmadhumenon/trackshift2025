@@ -58,3 +58,123 @@ body {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Accessibility: Focus indicators */
+/* Global focus styles for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid #FF1801; /* Ferrari red */
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Remove default focus outline for mouse users */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Enhanced focus for interactive elements */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #FF1801;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(255, 24, 1, 0.2);
+}
+
+/* Focus for checkboxes and radio buttons */
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid #FF1801;
+  outline-offset: 2px;
+}
+
+/* Skip to content link for screen readers */
+.skip-to-content {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #FF1801;
+  color: #F5F5F5;
+  padding: 8px 16px;
+  text-decoration: none;
+  z-index: 100;
+  border-radius: 0 0 4px 0;
+}
+
+.skip-to-content:focus {
+  top: 0;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  *:focus-visible {
+    outline-width: 3px;
+    outline-offset: 3px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Screen reader only content */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Accessible table styles */
+table {
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+}
+
+/* Ensure sufficient color contrast */
+.text-ferrari-white {
+  color: #F5F5F5; /* WCAG AA compliant on dark backgrounds */
+}
+
+.text-ferrari-red {
+  color: #FF1801; /* High contrast */
+}
+
+/* Accessible link styles */
+a:not([class]) {
+  text-decoration: underline;
+  color: #FF1801;
+}
+
+a:not([class]):hover {
+  text-decoration: none;
+}
+
+/* Accessible form labels */
+label {
+  cursor: pointer;
+}
+
+/* Improve readability */
+p, li, td, th {
+  line-height: 1.5;
+}

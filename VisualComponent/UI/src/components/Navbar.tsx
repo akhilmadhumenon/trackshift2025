@@ -2,13 +2,15 @@ import React from 'react';
 
 interface NavbarProps {
   onMeetTeamClick: () => void;
+  onAnalyticsClick: () => void;
   onDownloadReport: () => void;
   isReportReady: boolean;
   isDownloading?: boolean;
 }
 
 const Navbar: React.FC<NavbarProps> = ({ 
-  onMeetTeamClick, 
+  onMeetTeamClick,
+  onAnalyticsClick,
   onDownloadReport, 
   isReportReady,
   isDownloading = false
@@ -35,6 +37,16 @@ const Navbar: React.FC<NavbarProps> = ({
         >
           <span className="hidden sm:inline">Meet the Team</span>
           <span className="sm:hidden">Team</span>
+        </button>
+
+        {/* Analytics Link */}
+        <button
+          onClick={onAnalyticsClick}
+          className="text-ferrari-white hover:text-ferrari-red transition-colors duration-200 font-medium text-xs sm:text-sm md:text-base whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-ferrari-red focus:ring-offset-2 focus:ring-offset-ferrari-black rounded"
+          aria-label="View analytics"
+        >
+          <span className="hidden sm:inline">Analytics</span>
+          <span className="sm:hidden">Analytics</span>
         </button>
 
         {/* Download Report Button - Responsive sizing */}

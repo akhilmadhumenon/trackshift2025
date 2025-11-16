@@ -7,6 +7,7 @@ import UploadPanel from './components/UploadPanel';
 import ThreeDRenderer from './components/ThreeDRenderer';
 import InsightsPanel from './components/InsightsPanel';
 import VideoComparisonStrip from './components/VideoComparisonStrip';
+import AnalyticsView from './components/AnalyticsView';
 import { useAppStore } from './store';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
@@ -15,6 +16,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 function App() {
   const [isMeetTeamModalOpen, setIsMeetTeamModalOpen] = useState(false);
+  const [isAnalyticsView, setIsAnalyticsView] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
   const [errorType, setErrorType] = useState<'upload' | 'processing' | 'network' | 'timeout' | 'invalid-format' | 'generic'>('generic');
@@ -110,6 +112,14 @@ function App() {
 
   const handleMeetTeamClick = () => {
     setIsMeetTeamModalOpen(true);
+  };
+
+  const handleAnalyticsClick = () => {
+    setIsAnalyticsView(true);
+  };
+
+  const handleExitAnalytics = () => {
+    setIsAnalyticsView(false);
   };
 
   const handleDownloadReport = async () => {
@@ -213,34 +223,39 @@ function App() {
 
   return (
     <>
-      <AppLayout
-        navbar={
-          <Navbar
-            onMeetTeamClick={handleMeetTeamClick}
-            onDownloadReport={handleDownloadReport}
-            isReportReady={isReportReady}
-            isDownloading={isDownloading}
-          />
-        }
-        leftPanel={
-          <UploadPanel
-            onReconstruct={handleReconstruct}
-          />
-        }
-        centerRenderer={
-          <ThreeDRenderer 
-            meshUrl={reconstructionResult?.meshUrl || null}
-            crackMapUrl={reconstructionResult?.crackMapUrl || null}
-            depthMapUrl={reconstructionResult?.depthMapUrl || null}
-          />
-        }
-        rightPanel={
-          <InsightsPanel insights={reconstructionResult?.insights || null} />
-        }
-        bottomStrip={
-          <VideoComparisonStrip />
-        }
+      <Navbar
+        onMeetTeamClick={handleMeetTeamClick}
+        onAnalyticsClick={handleAnalyticsClick}
+        onDownloadReport={handleDownloadReport}
+        isReportReady={isReportReady}
+        isDownloading={isDownloading}
       />
+      
+      {isAnalyticsView ? (
+        <AnalyticsView onExit={handleExitAnalytics} />
+      ) : (
+        <AppLayout
+          navbar={null}
+          leftPanel={
+            <UploadPanel
+              onReconstruct={handleReconstruct}
+            />
+          }
+          centerRenderer={
+            <ThreeDRenderer 
+              meshUrl={reconstructionResult?.meshUrl || null}
+              crackMapUrl={reconstructionResult?.crackMapUrl || null}
+              depthMapUrl={reconstructionResult?.depthMapUrl || null}
+            />
+          }
+          rightPanel={
+            <InsightsPanel insights={reconstructionResult?.insights || null} />
+          }
+          bottomStrip={
+            <VideoComparisonStrip />
+          }
+        />
+      )}
       
       <MeetTheTeamModal
         isOpen={isMeetTeamModalOpen}
