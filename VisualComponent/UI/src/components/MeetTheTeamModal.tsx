@@ -14,40 +14,14 @@ interface TeamMember {
 
 const teamMembers: TeamMember[] = [
   {
-    name: 'Dr. Sarah Chen',
-    role: 'Lead Computer Vision Engineer',
-    email: 's.chen@f1-tyre-engine.com',
-    specialty: 'Crack Detection & Depth Estimation'
+    name: 'Thushara R Shenoi',
+    role: 'AI Engineer',
+    email: 'thushara.shenoi@gmail.com'
   },
   {
-    name: 'Marcus Rodriguez',
-    role: 'Senior 3D Reconstruction Specialist',
-    email: 'm.rodriguez@f1-tyre-engine.com',
-    specialty: 'TripoSR Pipeline & Mesh Generation'
-  },
-  {
-    name: 'Emily Watson',
-    role: 'Full Stack Developer',
-    email: 'e.watson@f1-tyre-engine.com',
-    specialty: 'React & Three.js Integration'
-  },
-  {
-    name: 'James Park',
-    role: 'Backend Engineer',
-    email: 'j.park@f1-tyre-engine.com',
-    specialty: 'API Development & Video Processing'
-  },
-  {
-    name: 'Dr. Aisha Patel',
-    role: 'Machine Learning Engineer',
-    email: 'a.patel@f1-tyre-engine.com',
-    specialty: 'Damage Classification & AI Insights'
-  },
-  {
-    name: 'Thomas Müller',
-    role: 'DevOps Engineer',
-    email: 't.muller@f1-tyre-engine.com',
-    specialty: 'Infrastructure & Deployment'
+    name: 'Akhil Madhu Menon',
+    role: 'AI Engineer',
+    email: 'akhilmmenon666@gmail.com'
   }
 ];
 
@@ -79,11 +53,11 @@ const MeetTheTeamModal: React.FC<MeetTheTeamModalProps> = ({ isOpen, onClose }) 
           </p>
 
           {/* Team Members Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="flex flex-wrap justify-center gap-8 max-w-3xl mx-auto">
             {teamMembers.map((member, index) => (
               <div
                 key={index}
-                className="bg-ferrari-black p-5 rounded-lg border-2 border-ferrari-red hover:border-red-700 transition-all duration-200 hover:shadow-lg hover:shadow-ferrari-red/20"
+                className="bg-ferrari-black p-6 rounded-lg border-2 border-ferrari-red hover:border-red-700 transition-all duration-200 hover:shadow-lg hover:shadow-ferrari-red/20 w-full sm:w-80"
               >
                 {/* Member Avatar Placeholder */}
                 <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-ferrari-graphite border-2 border-ferrari-red flex items-center justify-center">
@@ -133,32 +107,6 @@ const MeetTheTeamModal: React.FC<MeetTheTeamModalProps> = ({ isOpen, onClose }) 
             ))}
           </div>
 
-          {/* General Contact Section */}
-          <div className="mt-8 p-6 bg-ferrari-black rounded-lg border-2 border-ferrari-red">
-            <h3 className="text-xl font-bold text-ferrari-red mb-4 text-center font-formula">
-              GENERAL INQUIRIES
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
-              <div>
-                <p className="text-ferrari-white text-sm mb-1">Technical Support</p>
-                <a
-                  href="mailto:support@f1-tyre-engine.com"
-                  className="text-ferrari-red hover:text-red-700 transition-colors duration-200"
-                >
-                  support@f1-tyre-engine.com
-                </a>
-              </div>
-              <div>
-                <p className="text-ferrari-white text-sm mb-1">Business Inquiries</p>
-                <a
-                  href="mailto:info@f1-tyre-engine.com"
-                  className="text-ferrari-red hover:text-red-700 transition-colors duration-200"
-                >
-                  info@f1-tyre-engine.com
-                </a>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
