@@ -363,15 +363,8 @@ const TyreMesh: React.FC<{
   videoTimestamp: number;
   videoDuration: number;
 }> = ({ url, autoRotate, visualizationMode, crackMapUrl, depthMapUrl, syncWithVideo, videoTimestamp, videoDuration }) => {
-  let scene: THREE.Group;
-  
-  try {
-    const gltf = useGLTF(url);
-    scene = gltf.scene;
-  } catch (error) {
-    console.error('Error loading GLB mesh:', error);
-    throw new Error(`Failed to load 3D model: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
+  const gltf = useGLTF(url);
+  const scene = gltf.scene;
   const meshRef = useRef<THREE.Group>(null);
   const [clonedScene, setClonedScene] = useState<THREE.Group | null>(null);
   const [damageRegions, setDamageRegions] = useState<DamageRegion[]>([]);

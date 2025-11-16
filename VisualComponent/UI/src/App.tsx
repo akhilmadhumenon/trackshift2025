@@ -243,7 +243,7 @@ function App() {
           }
           centerRenderer={
             <ThreeDRenderer 
-              meshUrl={reconstructionResult?.meshUrl || null}
+              meshUrl={reconstructionResult?.meshUrl || "/tyre-model.glb"}
               crackMapUrl={reconstructionResult?.crackMapUrl || null}
               depthMapUrl={reconstructionResult?.depthMapUrl || null}
             />
